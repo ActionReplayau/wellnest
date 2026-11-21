@@ -1,6 +1,6 @@
 // Wellnest service worker: keeps the app itself on the phone so it opens fast.
 // It never stores health data. Entries always come straight from the database.
-const VERSION = 'wellnest-v1';
+const VERSION = 'wellnest-v2';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/design.css', 'css/app.css',
   'js/app.js', 'js/config.js', 'js/util.js', 'js/store.js', 'js/body.js', 'js/charts.js', 'js/cycle.js',

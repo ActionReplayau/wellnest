@@ -112,7 +112,8 @@ function personForm(el, m, back) {
       <div class="err mt12" id="err"></div>
       <button class="btn mt8" type="submit">Save</button>
     </form>
-    ${parent && m.id !== state.me.id ? `<button class="btn ghost mt12" data-act="pin">${icon('lock')} Reset ${esc(m.display_name)}'s PIN</button>
+    ${parent && m.id !== state.me.id ? `<button class="btn ghost mt12" data-act="invite">${icon('share')} Send Wellnest to ${esc(m.display_name)}</button>
+      <button class="btn ghost mt12" data-act="pin">${icon('lock')} Reset ${esc(m.display_name)}'s PIN</button>
       <button class="btn ghost mt12" data-act="del" style="color:#FB7185">${icon('trash')} Remove from family</button>` : ''}` });
   let role = m.role;
   el.querySelector('#cols').addEventListener('click', (e) => {
@@ -129,6 +130,7 @@ function personForm(el, m, back) {
   on(el, {
     role: (b) => { role = b.dataset.r; el.querySelectorAll('[data-act=role]').forEach((x) => x.classList.toggle('on', x === b)); },
     pin: () => pinSheet(m),
+    invite: () => inviteSheet(m),
     del: async () => {
       if (!(await confirmBox(`Remove ${m.display_name}?`, `This deletes ${m.display_name}'s profile and every entry they've logged. It can't be undone.`, 'Remove and delete', true))) return;
       try { await removeMember(m.id); toast(`${m.display_name} removed`); go('manage'); } catch (ex) { toast(ex.message); }
@@ -196,7 +198,7 @@ route('add-person', (el) => {
       if (!/^\d{6}$/.test(p1)) { $('#err2').textContent = 'The PIN must be exactly 6 numbers.'; return; }
       if (p1 !== $('#p2').value) { $('#err2').textContent = 'The two PINs don\'t match.'; return; }
       $('#go').disabled = true; $('#go').textContent = 'Adding…';
-      try { await addPerson({ ...person, pin: p1 }); sh.close(); toast(`${name} added 🎉`); go('manage'); } catch (ex) { $('#err2').textContent = ex.message; $('#go').disabled = false; $('#go').textContent = `Add ${name}`; }
+      try { const id = await addPerson({ ...person, pin: p1 }); sh.close(); toast(`${name} added 🎉`); go('manage'); setTimeout(() => inviteSheet(member(id), true), 300); } catch (ex) { $('#err2').textContent = ex.message; $('#go').disabled = false; $('#go').textContent = `Add ${name}`; }
     });
   });
 });
@@ -347,5 +349,30 @@ function medSheet(s, m) {
         sh.close(); toast('Saved'); redo();
       } catch (er) { box.querySelector('#err').textContent = er.message; }
     }
+  });
+}
+
+// =====================================================================
+// Send Wellnest to a family member: a link that opens their setup screen ready to go
+// =====================================================================
+export function inviteSheet(m, justAdded = false) {
+  if (!m) return;
+  const familyEmail = state.family?.login_base || device()?.familyEmail || '';
+  const code = btoa(unescape(encodeURIComponent(JSON.stringify({ e: familyEmail, n: m.display_name })))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const link = `${location.origin}${location.pathname}#/setup/${code}`;
+  const text = `Hi ${m.display_name}! Here's Wellnest, our family health check-in. Open this link on your phone and type the 6-digit PIN I gave you. Then tap Share and Add to Home Screen so it works like an app.`;
+  const sh = sheet(`<div class="sheet-head"><div class="h2">${justAdded ? `${esc(m.display_name)} is added! ` : ''}Send Wellnest to ${esc(m.display_name)}</div><button class="xbtn" data-close>${icon('x')}</button></div>
+    <p class="lead mt4">They'll get a link that opens Wellnest with their name already filled in. Tell them their PIN in person, so it's not in the message.</p>
+    <div class="pill-note mt12" style="word-break:break-all">${esc(link)}</div>
+    <button class="btn mt16" id="send">${icon('share')} Send</button>
+    <button class="btn ghost mt12" id="copy">Copy link</button>`);
+  sh.el.querySelector('#send').addEventListener('click', async () => {
+    try {
+      if (navigator.share) { await navigator.share({ title: 'Wellnest', text, url: link }); sh.close(); }
+      else { await navigator.clipboard.writeText(`${text}\n${link}`); toast('Copied. Paste it into a message.'); }
+    } catch { /* cancelled */ }
+  });
+  sh.el.querySelector('#copy').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(`${text}\n${link}`); toast('Copied. Paste it into a message.'); } catch { toast('Couldn\'t copy. Press and hold the link to copy it.'); }
   });
 }

@@ -72,14 +72,17 @@ route('welcome', (el) => {
 });
 
 // ---------- Set up this phone ----------
-route('setup', (el) => {
+route('setup', (el, inv) => {
   const d = device() || {};
+  let invite = {};
+  try { if (inv) invite = JSON.parse(decodeURIComponent(escape(atob(inv.replace(/-/g, '+').replace(/_/g, '/'))))); } catch { invite = {}; }
+  if (invite.e) d.familyEmail = invite.e;
   el.innerHTML = frame({ heroH: 250, body: `
     ${backBar('', 'welcome')}
-    <div class="on-hero"><div class="h1">Set up this phone</div><p class="lead mt8">Use the family email that was used to create Wellnest, plus your own name and PIN.</p></div>
+    <div class="on-hero"><div class="h1">${invite.n ? `Hi ${esc(invite.n)}!` : 'Set up this phone'}</div><p class="lead mt8">${invite.n ? 'Type the 6-digit PIN you were given. Then add Wellnest to your home screen: tap Share, then Add to Home Screen.' : 'Use the family email that was used to create Wellnest, plus your own name and PIN.'}</p></div>
     <form class="card" style="margin-top:46px" id="f">
       <label class="field"><span>Family email</span><input class="input" name="email" type="email" autocomplete="email" required value="${esc(d.familyEmail || '')}"></label>
-      <label class="field"><span>Your first name, as it was set up</span><input class="input" name="name" autocomplete="given-name" required></label>
+      <label class="field"><span>Your first name, as it was set up</span><input class="input" name="name" autocomplete="given-name" required value="${esc(invite.n || '')}"></label>
       <label class="field"><span>Your 6-digit PIN</span><input class="input" name="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" type="password" required></label>
       <div class="err mt12" id="err"></div>
       <button class="btn mt8" type="submit">Sign in</button>
