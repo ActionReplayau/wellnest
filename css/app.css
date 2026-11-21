@@ -192,3 +192,6 @@ input[type=range]{width:100%;accent-color:#C026D3;height:32px}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .sheet,.scr{overflow-x:hidden}
 label.chip input[type=date],label.btn input[type=file]{width:100%;height:100%;min-width:0;top:0;left:0}
+/* iPhone date boxes: keep them inside the card */
+input[type=date].input,input[type=time].input{-webkit-appearance:none;appearance:none;display:block;min-width:0;max-width:100%;text-align:left;line-height:52px}
+input[type=date].input::-webkit-date-and-time-value{text-align:left}

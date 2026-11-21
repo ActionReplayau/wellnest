@@ -1,6 +1,6 @@
 // Wellnest service worker: keeps the app itself on the phone so it opens fast.
 // It never stores health data. Entries always come straight from the database.
-const VERSION = 'wellnest-v2';
+const VERSION = 'wellnest-v3';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/design.css', 'css/app.css',
   'js/app.js', 'js/config.js', 'js/util.js', 'js/store.js', 'js/body.js', 'js/charts.js', 'js/cycle.js',
@@ -19,7 +19,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request).then((res) => {
+    fetch(e.request, { cache: 'no-cache' }).then((res) => {
       const copy = res.clone();
       caches.open(VERSION).then((c) => c.put(e.request, copy));
       return res;

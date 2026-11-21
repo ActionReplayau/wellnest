@@ -237,5 +237,12 @@ async function start() {
 start();
 
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+    reg.update().catch(() => {});
+    // when a newer version is ready, reload once so everyone gets it
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (window.__wnReloaded) return; window.__wnReloaded = true; location.reload();
+    });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+  }).catch(() => {});
 }
