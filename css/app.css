@@ -195,3 +195,26 @@ label.chip input[type=date],label.btn input[type=file]{width:100%;height:100%;mi
 /* iPhone date boxes: keep them inside the card */
 input[type=date].input,input[type=time].input{-webkit-appearance:none;appearance:none;display:block;min-width:0;max-width:100%;text-align:left;line-height:52px}
 input[type=date].input::-webkit-date-and-time-value{text-align:left}
+/* hormones graph + foods (period tracker) */
+.hwrap{position:relative;padding-top:18px}
+.hgraph{width:100%;height:160px;display:block;overflow:visible}
+.hgraph .ht text{font-size:10px;font-weight:700;fill:var(--muted)}
+.htoday{position:absolute;top:0;transform:translateX(-50%);font-size:11px;font-weight:800;padding:2px 8px;border-radius:999px;background:var(--text);color:var(--bg);white-space:nowrap}
+.hkeys{display:flex;flex-wrap:wrap;gap:6px}
+.hkey{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border-radius:999px;background:var(--chip);color:var(--text);font-size:12.5px;font-weight:700;border:1.5px solid transparent;font-family:inherit;cursor:pointer}
+.hkey i{width:10px;height:10px;border-radius:50%;background:var(--c)}
+.hkey.on{border-color:var(--c);background:color-mix(in srgb,var(--c) 16%,transparent)}
+.hkey.dim{opacity:.5}
+.foods{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.food{background:var(--chip);border-radius:16px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px}
+.food .em{font-size:26px;line-height:1.1}
+.food b{font-size:12px;line-height:1.25}
+.food small{font-size:10.5px;color:var(--muted);font-weight:600}
+.phasekey{display:flex;justify-content:center;flex-wrap:wrap;gap:4px 12px;font-size:11px;font-weight:700;color:var(--muted)}
+.phasekey span{display:inline-flex;align-items:center;gap:5px}.phasekey i{width:14px;height:5px;border-radius:3px}
+.energy{display:flex;align-items:flex-end;gap:4px}
+.energy i{width:9px;border-radius:4px;background:var(--track)}
+.energy i.on{background:linear-gradient(180deg,#FBBF24,#F97316)}
+.moves{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.move{background:var(--chip);border-radius:16px;padding:10px 12px;display:flex;align-items:center;gap:10px}
+.move .em{font-size:24px;line-height:1}.move b{font-size:12.5px;line-height:1.25}

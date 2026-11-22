@@ -5,6 +5,8 @@ import {
 } from '../util.js';
 import { state, subject, isAdultPrivate, rows, upsert, insert, remove, update, upsertMany, updateMember, shareDefault, dueTimes } from '../store.js';
 import { cycleStats, phases, phaseOn, estimateFromPain } from '../cycle.js';
+import { hormoneSection } from '../hormones.js';
+import { periodCsv, saveFile, readPeriodCsv } from '../csv.js';
 
 const redo = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
 const by = (s) => (s.id === state.me.id ? '' : `Logging for ${esc(s.display_name)} · `);
@@ -15,7 +17,7 @@ const toggleChip = (on2, label) => `<span class="chip ${on2 ? 'psel' : ''}">${la
 // =====================================================================
 const FLOWS = [['none', 'None', 0], ['spotting', 'Spotting', 1], ['light', 'Light', 1], ['medium', 'Medium', 2], ['heavy', 'Heavy', 3]];
 const EXTRAS = ['Cramps', 'Back ache', 'Tired', 'Bloating', 'Headache', 'Sore breasts', 'Acne', 'Feeling sick'];
-let periodDay = null;
+let periodDay = null, hormonePick = null;
 
 route('period', async (el, _a, alive) => {
   const s = subject(), t = today();
@@ -62,8 +64,12 @@ route('period', async (el, _a, alive) => {
       ${cal.map((d) => { const f = bleed.get(d); const cls = ['light', 'medium', 'heavy'].includes(f) ? 'p' : f === 'spotting' ? 'sp' : predicted.has(d) && d > t ? 'p fut' : ''; return `<span class="${cls} ${d === t ? 'today' : ''}">${+d.slice(8)}</span>`; }).join('')}</div>
       <div class="legend"><span><i class="legend-dot" style="background:#EC4899"></i>Period</span><span><i class="legend-dot" style="border:2px dashed #F9A8D4"></i>Expected</span><span><i class="legend-dot" style="background:color-mix(in srgb,#EC4899 30%,transparent)"></i>Spotting</span></div></div>
 
+    ${s.ovaries_removed ? '' : `<div id="hormones">${hormoneSection(st, hormonePick)}</div>`}
+
+    <div class="section-label">More</div>
     <a class="card" href="#/cycle" style="display:block"><div class="row"><div class="icon-tile t-pink">${icon('chart')}</div><div class="grow"><div class="h2">Your cycle</div><div class="muted small">Phases, averages and past cycles</div></div>${icon('right')}</div></a>
-    ${s.id === state.me.id ? `<a class="card" href="#/import" style="display:block"><div class="row"><div class="icon-tile t-indigo">${icon('upload')}</div><div class="grow"><div class="h2">Import from iPhone Health</div><div class="muted small">Bring in your past periods</div></div>${icon('right')}</div></a>` : ''}
+    ${s.id === state.me.id ? `<a class="card" href="#/import" style="display:block"><div class="row"><div class="icon-tile t-indigo">${icon('upload')}</div><div class="grow"><div class="h2">Bring in past periods</div><div class="muted small">From iPhone Health, Lively or a spreadsheet</div></div>${icon('right')}</div></a>` : ''}
+    <button class="card" data-act="export" style="display:block;width:100%;text-align:left;font:inherit;color:inherit"><div class="row"><div class="icon-tile t-teal">${icon('share')}</div><div class="grow"><div class="h2">Save a copy of my periods</div><div class="muted small">A spreadsheet file for you, your doctor or another app</div></div>${icon('right')}</div></button>
     ${adult ? `<p class="muted small center mt16">${icon('lock')} ${s.share_period ? 'Your family can see that you\'re on your period, not the details.' : 'Private to you.'}</p>` : ''}
   ` });
   el.querySelector('#pday').addEventListener('change', (e) => { if (e.target.value) { periodDay = e.target.value; redo(); } });
@@ -77,6 +83,14 @@ route('period', async (el, _a, alive) => {
     flow: (b) => save({ flow: row?.flow === b.dataset.f ? null : b.dataset.f }),
     extra: (b) => { const x = new Set(row?.extras || []); x.has(b.dataset.x) ? x.delete(b.dataset.x) : x.add(b.dataset.x); save({ extras: [...x] }); },
     backtoday: () => { periodDay = null; redo(); },
+    hpick: (b) => { hormonePick = hormonePick === b.dataset.h ? null : b.dataset.h; el.querySelector('#hormones').innerHTML = hormoneSection(st, hormonePick); },
+    export: async () => {
+      try {
+        const every = await rows('period_days', (q) => q.eq('member_id', s.id).order('day'));
+        if (!every.some((r) => r.flow || (r.extras || []).length)) return toast('Nothing logged yet');
+        await saveFile(`wellnest-periods-${s.display_name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.csv`, periodCsv(every));
+      } catch (e) { toast(e.message); }
+    },
     sharefam: async () => {
       try {
         const v = !s.share_period;
@@ -132,14 +146,45 @@ route('cycle', async (el, _a, alive) => {
 route('import', (el) => {
   const s = state.me;
   el.innerHTML = frame({ heroH: 230, heroAttr: 'data-period-hero', body: `${backBar('', s.period_on ? 'period' : 'settings')}
-    <div class="on-hero"><div class="eyebrow">${esc(s.display_name)}</div><div class="h1 mt4">Bring in your history</div><p class="lead mt4">From the Health app on your iPhone</p></div>
-    <div class="card mt16"><div class="steps">
+    <div class="on-hero"><div class="eyebrow">${esc(s.display_name)}</div><div class="h1 mt4">Bring in your history</div><p class="lead mt4">From iPhone Health, Lively or a spreadsheet</p></div>
+    <div class="section-label" style="margin-top:22px">From iPhone Health</div>
+    <div class="card"><div class="steps">
       <div><b>1</b><span>Open <strong>Health</strong>, tap your picture at the top right</span></div>
       <div><b>2</b><span>Tap <strong>Export All Health Data</strong> and save it to Files</span></div>
       <div><b>3</b><span>Come back here and pick that file (<strong>export.zip</strong>)</span></div></div>
       <label class="btn mt16" style="position:relative">${icon('upload')} Choose export.zip<input type="file" id="file" accept=".zip,application/zip" style="position:absolute;inset:0;opacity:0"></label>
       <p class="muted small mt8">The file is read on this phone. Only the dates and numbers you pick below are saved.</p></div>
+    <div class="section-label">Using Lively?</div>
+    <div class="card"><div class="row" style="align-items:flex-start"><div class="icon-tile t-pink">${icon('flower')}</div>
+      <p class="lead grow" style="font-size:13.5px">Lively can copy your periods into iPhone Health. In Lively, turn on <strong>Apple Health</strong> in its settings, then use the steps above. If Lively gives you a spreadsheet file instead, pick it below.</p></div></div>
+    <div class="section-label">From a spreadsheet file</div>
+    <div class="card"><p class="lead" style="font-size:13.5px">A <strong>.csv</strong> file with a date on each row, like the one Wellnest saves for you.</p>
+      <label class="btn ghost mt12" style="position:relative">${icon('upload')} Choose a .csv file<input type="file" id="csv" accept=".csv,text/csv,text/plain" style="position:absolute;inset:0;opacity:0"></label></div>
     <div id="result"></div>` });
+  el.querySelector('#csv').addEventListener('change', async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const out = el.querySelector('#result');
+    try {
+      const list = readPeriodCsv(await file.text());
+      const periods = cycleStats(list).periods;
+      out.innerHTML = `<div class="card"><div class="h2">Found ${periods.length} period${periods.length === 1 ? '' : 's'} · ${fmtDay(list[0].day, { month: 'short', year: 'numeric' })} to ${fmtDay(list[list.length - 1].day, { month: 'short', year: 'numeric' })}</div>
+        <p class="muted small mt8">${list.length} days with flow or symptoms.</p>
+        <button class="btn mt16" id="go">Import</button>
+        <p class="muted small center mt8">${icon('lock')} Stays private to you. Days you've already logged in Wellnest are updated to match the file.</p></div>`;
+      out.scrollIntoView({ behavior: 'smooth' });
+      out.querySelector('#go').addEventListener('click', async (ev) => {
+        ev.target.disabled = true; ev.target.textContent = 'Importing…';
+        try {
+          // 'iphone' is the database's label for anything imported rather than tapped in
+          await upsertMany('period_days', list.map((r) => ({ ...r, member_id: s.id, source: 'iphone', shared: false })), 'member_id,day');
+          if (!s.period_on) await updateMember(s.id, { period_on: true });
+          toast('Imported'); go('cycle');
+        } catch (e2) { toast(e2.message); ev.target.disabled = false; ev.target.textContent = 'Import'; }
+      });
+    } catch (ex) {
+      out.innerHTML = `<div class="card"><div class="h2">That didn't work</div><p class="lead mt8">${esc(ex.message)}</p></div>`;
+    }
+  });
   el.querySelector('#file').addEventListener('change', async (e) => {
     const file = e.target.files[0]; if (!file) return;
     const out = el.querySelector('#result');
