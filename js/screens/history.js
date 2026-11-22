@@ -3,12 +3,13 @@ import { route, frame } from '../app.js';
 import { esc, icon, avatar, on, today, addDays, fmtDay, avg, hoursText, loadingHtml, round1, sevClass, daysBetween } from '../util.js';
 import { state, member, subject, rows, dueTimes, isAdultPrivate } from '../store.js';
 import { lineChart, barChart } from '../charts.js';
+import { stepRows, stepChart, goalOf, fmtSteps } from '../steps.js';
 
 let range = 14;
 let personId = null;
 
 export async function loadRange(pid, from, to) {
-  const [symptoms, checks, sleep, meds, doses, weights, period, endo, pressure] = await Promise.all([
+  const [symptoms, checks, sleep, meds, doses, weights, period, endo, pressure, steps] = await Promise.all([
     rows('symptoms', (q) => q.eq('member_id', pid).lte('started_on', to).or(`ended_on.is.null,ended_on.gte.${from}`).order('started_on')),
     rows('symptom_checks', (q) => q.eq('member_id', pid).gte('day', from).lte('day', to).order('day')),
     rows('sleep_logs', (q) => q.eq('member_id', pid).gte('night_of', from).lte('night_of', to).order('night_of')),
@@ -18,8 +19,9 @@ export async function loadRange(pid, from, to) {
     rows('period_days', (q) => q.eq('member_id', pid).gte('day', from).lte('day', to).order('day')),
     rows('endo_logs', (q) => q.eq('member_id', pid).gte('day', from).lte('day', to).order('day')),
     rows('eye_pressure', (q) => q.eq('member_id', pid).lte('measured_on', to).order('measured_on')),
+    member(pid)?.steps_on ? stepRows(pid, from, to) : [],
   ]);
-  return { symptoms, checks, sleep, meds, doses, weights, period, endo, pressure };
+  return { symptoms, checks, sleep, meds, doses, weights, period, endo, pressure, steps };
 }
 
 export const dayList = (from, to) => { const out = []; for (let d = from; d <= to; d = addDays(d, 1)) out.push(d); return out; };
@@ -105,6 +107,17 @@ route('history', async (el, _a, alive) => {
     parts.push(`<div class="section-label">Weight</div><div class="card"><div class="row between"><div class="h2">Weight</div>
       <span class="muted small" style="font-weight:700">${v[v.length - 1]} kg</span></div>
       ${lineChart(days, vals, { min: Math.floor(Math.min(...v) - 2), max: Math.ceil(Math.max(...v) + 2), unit: '' })}</div>`);
+  }
+
+  // steps
+  if (d.steps.length) {
+    const goal = goalOf(p);
+    const hit = d.steps.filter((x) => x.steps >= goal).length;
+    const av = Math.round(avg(d.steps.map((x) => x.steps)));
+    parts.push(`<div class="section-label">Steps</div><div class="card"><div class="row between"><div class="h2">Steps</div>
+      <span class="muted small" style="font-weight:700">Average ${fmtSteps(av)} a day</span></div>
+      ${stepChart(days, d.steps, goal)}
+      <div class="muted small mt8" style="font-weight:700">Goal of ${fmtSteps(goal)} reached on ${hit} of ${d.steps.length} day${d.steps.length === 1 ? '' : 's'}</div></div>`);
   }
 
   // period

@@ -1,9 +1,9 @@
 // Wellnest service worker: keeps the app itself on the phone so it opens fast.
 // It never stores health data. Entries always come straight from the database.
-const VERSION = 'wellnest-v4';
+const VERSION = 'wellnest-v5';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/design.css', 'css/app.css',
-  'js/app.js', 'js/config.js', 'js/util.js', 'js/store.js', 'js/body.js', 'js/charts.js', 'js/cycle.js', 'js/hormones.js', 'js/csv.js',
+  'js/app.js', 'js/config.js', 'js/util.js', 'js/store.js', 'js/body.js', 'js/charts.js', 'js/cycle.js', 'js/hormones.js', 'js/csv.js', 'js/steps.js',
   'js/screens/today.js', 'js/screens/history.js', 'js/screens/family.js', 'js/screens/report.js',
   'js/screens/settings.js', 'js/screens/trackers.js', 'js/lib/supabase.js', 'js/lib/fflate.js',
   'img/body.png', 'img/icon-192.png', 'img/icon-512.png', 'img/apple-touch-icon.png',

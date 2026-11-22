@@ -24,16 +24,16 @@ export function lineChart(days, values, { max = 10, min = 0, colour = 'url(#gLin
     ${labels}</svg></div>`;
 }
 
-export function barChart(days, values, { max = 12, goal = null, label = (d) => dayName(d).charAt(0) } = {}) {
+export function barChart(days, values, { max = 12, goal = null, goalText = null, hit = null, label = (d) => dayName(d).charAt(0) } = {}) {
   const n = days.length, bw = (W - PAD * 2) / n;
   const y = (v) => 8 + (1 - v / max) * (H - 30);
   const bars = days.map((d, i) => {
     const v = values.get(d);
     if (v == null) return `<rect x="${PAD + i * bw + bw * 0.2}" y="${H - 26}" width="${bw * 0.6}" height="4" rx="2" fill="var(--track)"/>`;
-    return `<rect x="${PAD + i * bw + bw * 0.18}" y="${y(v)}" width="${bw * 0.64}" height="${H - 22 - y(v)}" rx="${Math.min(6, bw * 0.3)}" fill="url(#gBar)"/>`;
+    return `<rect x="${PAD + i * bw + bw * 0.18}" y="${y(v)}" width="${bw * 0.64}" height="${H - 22 - y(v)}" rx="${Math.min(6, bw * 0.3)}" fill="${hit && hit(v) ? 'url(#gHit)' : 'url(#gBar)'}"/>`;
   }).join('');
   const labs = n <= 14 ? days.map((d, i) => `<text class="axis" x="${PAD + i * bw + bw / 2}" y="${H - 6}" text-anchor="middle">${esc(label(d))}</text>`).join('')
     : [0, Math.floor(n / 2), n - 1].map((i) => `<text class="axis" x="${PAD + i * bw + bw / 2}" y="${H - 6}" text-anchor="middle">${esc(fmtDay(days[i]))}</text>`).join('');
-  const g = goal ? `<line x1="${PAD}" x2="${W - PAD}" y1="${y(goal)}" y2="${y(goal)}" stroke="#A78BFA" stroke-dasharray="4 4"/><text class="axis" x="${W - PAD}" y="${y(goal) - 4}" text-anchor="end">${goal}h</text>` : '';
+  const g = goal ? `<line x1="${PAD}" x2="${W - PAD}" y1="${y(goal)}" y2="${y(goal)}" stroke="#A78BFA" stroke-dasharray="4 4"/><text class="axis" x="${W - PAD}" y="${y(goal) - 4}" text-anchor="end">${goalText ?? `${goal}h`}</text>` : '';
   return `<div class="chartbox"><svg viewBox="0 0 ${W} ${H}">${g}${bars}${labs}</svg></div>`;
 }

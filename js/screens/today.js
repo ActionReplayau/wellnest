@@ -8,6 +8,7 @@ import {
   state, member, subject, loggable, amParent, isAdultPrivate, rows, insert, upsert, update, remove, shareDefault, dueTimes, updateMember,
 } from '../store.js';
 import { regionAt, suggestParts } from '../body.js';
+import { stepRows, stepRing, stepChart, streakText, goalSheet, goalOf, fmtSteps, saveSteps, lastDays } from '../steps.js';
 
 const TREND = {
   same: ['equal', 'Same'], better: ['down-arrow', 'Better'], worse: ['up-arrow', 'Worse'], gone: ['check', 'Gone'],
@@ -25,7 +26,7 @@ let view = null;   // 'list' or 'body', remembered per person
 let side = 'front';
 
 async function load(sid, t) {
-  const [symptoms, meds, doses, sleep, weights, period, endo] = await Promise.all([
+  const [symptoms, meds, doses, sleep, weights, period, endo, steps] = await Promise.all([
     rows('symptoms', (q) => q.eq('member_id', sid).lte('started_on', t).or(`ended_on.is.null,ended_on.gte.${t}`).order('started_on')),
     rows('medications', (q) => q.eq('member_id', sid).eq('active', true).order('created_at')),
     rows('medication_doses', (q) => q.eq('member_id', sid).eq('day', t)),
@@ -33,10 +34,11 @@ async function load(sid, t) {
     rows('weight_logs', (q) => q.eq('member_id', sid).gte('day', addDays(t, -60)).order('day')),
     rows('period_days', (q) => q.eq('member_id', sid).eq('day', t)),
     rows('endo_logs', (q) => q.eq('member_id', sid).eq('day', t)),
+    member(sid)?.steps_on ? stepRows(sid, addDays(t, -6), t) : [],
   ]);
   const ids = symptoms.map((s) => s.id);
   const checks = ids.length ? await rows('symptom_checks', (q) => q.in('symptom_id', ids).order('day')) : [];
-  return { symptoms, checks, meds, doses, sleep: sleep[0] || null, weights, period: period[0] || null, endo: endo[0] || null };
+  return { symptoms, checks, meds, doses, sleep: sleep[0] || null, weights, period: period[0] || null, endo: endo[0] || null, steps };
 }
 
 // latest severity before (or on) a day
@@ -82,6 +84,7 @@ function progress(s, d, t) {
   if (due.length) items.push(['Meds', due.every(([m, tm]) => d.doses.some((x) => x.medication_id === m.id && x.scheduled_time === tm))]);
   items.push(['Sleep', !!d.sleep]);
   if (s.weight_on) items.push(['Weight', d.weights.some((w) => daysBetween(w.day, t) < 7)]);
+  if (s.steps_on) items.push(['Steps', d.steps.some((x) => x.day === t)]);
   if (s.period_on && !s.uterus_removed) items.push(['Period', !!d.period]);
   if (s.endo_on) items.push(['Endo', !!d.endo]);
   if (s.eyes_on) {
@@ -113,6 +116,7 @@ function draw(el, s, t, d) {
     ${medsCard(s, d, t)}
     ${sleepCard(s, d, adult)}
     ${s.weight_on ? weightCard(s, d, t, adult) : ''}
+    ${s.steps_on ? stepsCard(s, d, t, adult) : ''}
     ${trackerCards(s, d)}
     <p class="center muted small mt16">${icon('check')} Everything saves as you go</p>
   ` });
@@ -252,6 +256,29 @@ function weightCard(s, d, t, adult) {
   </div>`;
 }
 
+// ---------- steps ----------
+function stepsCard(s, d, t, adult) {
+  const goal = goalOf(s);
+  const todays = d.steps.find((x) => x.day === t);
+  const n = todays?.steps ?? 0;
+  const left = goal - n;
+  const week = lastDays(7, t);
+  const fromWatch = d.steps.some((x) => x.source === 'iphone');
+  return `<div class="section-label">Steps</div><div class="card">
+    <div class="row between"><div class="row"><div class="icon-tile t-green">${icon('steps')}</div><div><div class="h2">Steps</div>
+      <div class="muted small">Goal ${fmtSteps(goal)} a day${todays?.source === 'iphone' ? ' · from Apple Watch' : ''}</div></div></div>
+      ${adult && todays ? shareChip('step_logs', todays.id, todays.shared) : adult ? `<span class="sharechip">${icon(s.share_steps ? 'users' : 'lock')} ${s.share_steps ? 'Shared' : 'Only you'}</span>` : ''}</div>
+    <div class="row mt16" style="gap:18px">${stepRing(n, goal)}
+      <div class="grow"><div class="h2" style="font-size:19px">${!todays ? 'No steps yet today' : left <= 0 ? 'Goal reached! 🎉' : `${fmtSteps(left)} to go`}</div>
+        <div class="muted small mt4" style="font-weight:700">${streakText(d.steps, goal, week)}</div>
+        <button class="linkbtn mt4" data-act="goal">Change goal</button></div></div>
+    ${stepChart(week, d.steps, goal)}
+    <div class="inline-input mt12"><input class="input" id="stepsIn" type="number" inputmode="numeric" min="0" max="200000" step="1" placeholder="Steps today" value="${todays ? todays.steps : ''}" style="max-width:160px">
+      <button class="btn small" data-act="steps">Save</button></div>
+    ${s.id === state.me.id && !fromWatch ? `<a class="list-row mt8" href="#/steps-auto"><div class="grow"><b>Get steps from your Apple Watch</b><span>Set it up once, then they arrive by themselves</span></div><span class="chev">${icon('right')}</span></a>` : ''}
+  </div>`;
+}
+
 // ---------- tracker shortcuts ----------
 function trackerCards(s, d) {
   const cards = [];
@@ -359,6 +386,13 @@ function wire(el, s, t, d) {
     quality: (b) => saveSleep({ quality: +b.dataset.q, hours: +range.value }).then(() => {
       el.querySelectorAll('.faces button').forEach((x) => x.classList.toggle('on', x === b));
     }),
+    goal: () => goalSheet(s, redraw),
+    steps: async () => {
+      const v = el.querySelector('#stepsIn').value;
+      const n = Math.round(+v);
+      if (v === '' || !(n >= 0 && n <= 200000)) return toast('Type today\'s steps');
+      try { await saveSteps(s, t, n, 'app', d.steps.find((x) => x.day === t)); toast('Steps saved'); redraw(); } catch (e) { toast(e.message); }
+    },
     weight: async () => {
       const kg = parseFloat(el.querySelector('#kg').value);
       if (!(kg > 0 && kg < 400)) return toast('Type your weight in kg');

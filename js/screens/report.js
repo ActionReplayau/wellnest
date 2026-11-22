@@ -67,6 +67,14 @@ export function buildReport(p, from, to, d) {
     out.push(`<h4>Weight</h4><p>${b.kg} kg on ${fmtDay(b.day)}${d.weights.length > 1 ? ` (${ch > 0 ? '+' : ''}${ch} kg since ${fmtDay(a.day)})` : ''}.${p.height_cm ? ` Height ${p.height_cm} cm, BMI ${round1(b.kg / (p.height_cm / 100) ** 2)}.` : ''}</p>`);
   }
 
+  // steps
+  if (d.steps?.length) {
+    const goal = p.step_goal || 8000;
+    const n = d.steps.map((x) => x.steps);
+    const hit = n.filter((x) => x >= goal).length;
+    out.push(`<h4>Steps</h4><p>Average ${Math.round(avg(n)).toLocaleString('en-AU')} steps a day over ${n.length} day${n.length > 1 ? 's' : ''} (lowest ${Math.min(...n).toLocaleString('en-AU')}, highest ${Math.max(...n).toLocaleString('en-AU')}). Daily goal of ${goal.toLocaleString('en-AU')} reached on ${hit} day${hit === 1 ? '' : 's'}.</p>`);
+  }
+
   // period
   if (d.period.length) {
     const st = cycleStats(d.periodAll || d.period, to);
@@ -116,7 +124,7 @@ route('report', async (el, _a, alive) => {
   const { rows } = await import('../store.js');
   d.periodAll = await rows('period_days', (q) => q.eq('member_id', p.id).lte('day', to).gte('day', addDays(to, -400)));
   if (!alive()) return;
-  const nothing = !d.symptoms.length && !d.sleep.length && !d.doses.length && !d.weights.length && !d.period.length && !d.endo.length;
+  const nothing = !d.symptoms.length && !d.sleep.length && !d.doses.length && !d.weights.length && !d.steps.length && !d.period.length && !d.endo.length;
   el.innerHTML = frame({ heroH: 260, tabs: 'report', body: `${head}
     ${nothing && p.id !== state.me.id && isAdultPrivate(p) ? `<div class="card mt16 empty">${icon('lock')}<br>${esc(p.display_name)} is 16 or over. The report only includes what they've shared. They can make a full report on their own login.</div>` : ''}
     ${buildReport(p, from, to, d)}

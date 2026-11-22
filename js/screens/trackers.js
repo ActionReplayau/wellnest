@@ -192,13 +192,14 @@ route('import', (el) => {
     try {
       const found = await readHealthExport(file, (f) => { el.querySelector('#bar').style.width = `${Math.round(f * 100)}%`; el.querySelector('#pct').textContent = `${Math.round(f * 100)}%`; });
       const periods = cycleStats(found.period).periods;
-      const sleepN = found.sleep.length, weightN = found.weight.length;
+      const sleepN = found.sleep.length, weightN = found.weight.length, stepsN = found.steps.length;
       const span = found.period.length ? `${fmtDay(found.period[0].day, { month: 'short', year: 'numeric' })} to ${fmtDay(found.period[found.period.length - 1].day, { month: 'short', year: 'numeric' })}` : '';
-      out.innerHTML = `<div class="card"><div class="h2">Found ${periods.length} period${periods.length === 1 ? '' : 's'}${span ? ` · ${span}` : ''}</div>
+      out.innerHTML = `<div class="card"><div class="h2">${periods.length ? `Found ${periods.length} period${periods.length === 1 ? '' : 's'}${span ? ` · ${span}` : ''}` : 'Here\'s what we found'}</div>
         <div class="mt8">
           <label class="list-row"><input type="checkbox" id="cP" ${found.period.length ? 'checked' : 'disabled'}><div class="grow"><b><i class="hk" style="background:#EC4899"></i> Period dates & flow</b><span>${found.period.length} days</span></div></label>
           <label class="list-row"><input type="checkbox" id="cS" ${sleepN ? '' : 'disabled'}><div class="grow"><b><i class="hk" style="background:#6366F1"></i> Sleep</b><span>${sleepN} nights</span></div></label>
-          <label class="list-row"><input type="checkbox" id="cW" ${weightN ? '' : 'disabled'}><div class="grow"><b><i class="hk" style="background:#2DD4BF"></i> Weight</b><span>${weightN} readings</span></div></label></div>
+          <label class="list-row"><input type="checkbox" id="cW" ${weightN ? '' : 'disabled'}><div class="grow"><b><i class="hk" style="background:#2DD4BF"></i> Weight</b><span>${weightN} readings</span></div></label>
+          <label class="list-row"><input type="checkbox" id="cT" ${stepsN ? 'checked' : 'disabled'}><div class="grow"><b><i class="hk" style="background:#22C55E"></i> Steps</b><span>${stepsN} days${stepsN ? ' · iPhone and Apple Watch' : ''}</span></div></label></div>
         <button class="btn mt16" id="go">Import</button>
         <p class="muted small center mt8">${icon('lock')} Stays private to you. Anything you've already logged in Wellnest is kept.</p></div>`;
       out.querySelector('#go').addEventListener('click', async (ev) => {
@@ -207,6 +208,10 @@ route('import', (el) => {
           if (out.querySelector('#cP').checked) await upsertMany('period_days', found.period.map((r) => ({ ...r, member_id: s.id, source: 'iphone', shared: false })), 'member_id,day');
           if (out.querySelector('#cS').checked) await upsertMany('sleep_logs', found.sleep.map((r) => ({ ...r, member_id: s.id, source: 'iphone', shared: shareDefault(s, 'sleep') })), 'member_id,night_of');
           if (out.querySelector('#cW').checked) await upsertMany('weight_logs', found.weight.map((r) => ({ ...r, member_id: s.id, source: 'iphone', shared: shareDefault(s, 'weight') })), 'member_id,day');
+          if (out.querySelector('#cT').checked) {
+            await upsertMany('step_logs', found.steps.map((r) => ({ ...r, member_id: s.id, source: 'iphone', shared: shareDefault(s, 'steps') })), 'member_id,day');
+            if (!s.steps_on) await updateMember(s.id, { steps_on: true });
+          }
           if (out.querySelector('#cP').checked && !s.period_on) await updateMember(s.id, { period_on: true });
           toast('Imported'); go(out.querySelector('#cP').checked ? 'cycle' : 'history');
         } catch (e2) { toast(e2.message); ev.target.disabled = false; ev.target.textContent = 'Import'; }
@@ -220,7 +225,7 @@ route('import', (el) => {
 // Reads export.zip -> export.xml as a stream, so very large exports work on a phone.
 export async function readHealthExport(file, progress = () => {}) {
   const FF = window.fflate;
-  const period = new Map(), sleepBySource = new Map(), weight = new Map();
+  const period = new Map(), sleepBySource = new Map(), weight = new Map(), stepsBySource = new Map();
   const dayOf = (s) => s.slice(0, 10);
   const attr = (tag, name) => { const m = tag.match(new RegExp(`\\b${name}="([^"]*)"`)); return m ? m[1] : null; };
   const handle = (tag) => {
@@ -240,6 +245,11 @@ export async function readHealthExport(file, progress = () => {}) {
       const hrs = (b - a) / 3600000; if (!(hrs > 0 && hrs < 24)) return;
       const night = dayOf(attr(tag, 'endDate')), src = attr(tag, 'sourceName') || '?';
       const key = `${night}|${src}`; sleepBySource.set(key, (sleepBySource.get(key) || 0) + hrs);
+    } else if (type === 'HKQuantityTypeIdentifierStepCount') {
+      // iPhone and Apple Watch both count steps, so add up each one separately and keep the bigger total
+      const v = parseFloat(attr(tag, 'value')); if (!(v >= 0)) return;
+      const key = `${dayOf(attr(tag, 'startDate'))}|${attr(tag, 'sourceName') || '?'}`;
+      stepsBySource.set(key, (stepsBySource.get(key) || 0) + v);
     } else if (type === 'HKQuantityTypeIdentifierBodyMass') {
       let v = parseFloat(attr(tag, 'value')); const unit = attr(tag, 'unit');
       if (unit === 'lb') v *= 0.45359237; else if (unit === 'g') v /= 1000;
@@ -281,7 +291,10 @@ export async function readHealthExport(file, progress = () => {}) {
   });
   const sleepByNight = new Map();
   for (const [key, h] of sleepBySource) { const n = key.split('|')[0]; sleepByNight.set(n, Math.max(sleepByNight.get(n) || 0, h)); }
+  const stepsByDay = new Map();
+  for (const [key, n] of stepsBySource) { const d = key.split('|')[0]; stepsByDay.set(d, Math.max(stepsByDay.get(d) || 0, n)); }
   return {
+    steps: [...stepsByDay].sort().map(([day, n]) => ({ day, steps: Math.min(Math.round(n), 200000) })),
     period: [...period].sort().map(([day, flow]) => ({ day, flow })),
     sleep: [...sleepByNight].sort().map(([night_of, hours]) => ({ night_of, hours: Math.round(hours * 4) / 4 })),
     weight: [...weight].sort().map(([day, kg]) => ({ day, kg })),
@@ -488,3 +501,61 @@ function pressureSheet(s, target) {
     } catch (e) { toast(e.message); }
   });
 }
+
+// =====================================================================
+// Steps from Apple Watch (via an iPhone Shortcut that opens a Wellnest link)
+// =====================================================================
+const stepsLink = () => `${location.origin}${location.pathname}#/steps-in/`;
+
+route('steps-auto', (el) => {
+  const s = state.me;
+  el.innerHTML = frame({ heroH: 230, body: `${backBar('', 'today')}
+    <div class="on-hero"><div class="eyebrow">${esc(s.display_name)} · steps</div><div class="h1 mt4">Steps from your Apple Watch</div>
+      <p class="lead mt4">Set this up once on your iPhone. Every evening your steps arrive by themselves.</p></div>
+    <div class="card mt16"><div class="row" style="align-items:flex-start"><div class="icon-tile t-green">${icon('steps')}</div>
+      <p class="lead grow" style="font-size:13.5px">Your watch saves steps into the iPhone <strong>Health</strong> app. Web apps like Wellnest aren't allowed to read Health directly, so a small <strong>Shortcut</strong> (Apple's free automation app) reads today's steps and hands them to Wellnest.</p></div></div>
+    <div class="section-label">1 · Copy your Wellnest link</div>
+    <div class="card"><div class="input" style="display:flex;align-items:center;font-size:13px;overflow:hidden;white-space:nowrap">${esc(stepsLink())}</div>
+      <button class="btn mt12" data-act="copy">${icon('file')} Copy link</button></div>
+    <div class="section-label">2 · Make the automation</div>
+    <div class="card"><div class="steps">
+      <div><b>1</b><span>Open the <strong>Shortcuts</strong> app, tap <strong>Automation</strong> at the bottom, then <strong>+</strong> (or <strong>New Automation</strong>)</span></div>
+      <div><b>2</b><span>Tap <strong>Time of Day</strong>. Pick <strong>9:00 pm</strong>, <strong>Daily</strong>, and <strong>Run Immediately</strong>. Tap <strong>Next</strong>, then <strong>New Blank Automation</strong></span></div>
+      <div><b>3</b><span>Search for <strong>Find Health Samples</strong> and tap it. Tap <strong>Type</strong> and choose <strong>Steps</strong></span></div>
+      <div><b>4</b><span>Tap <strong>Add Filter</strong> so it says <strong>Start Date is Today</strong>. Set <strong>Group By</strong> to <strong>Day</strong></span></div>
+      <div><b>5</b><span>Search for <strong>Open URLs</strong> and add it. Tap the blue <strong>URL</strong>, paste your link, then tap <strong>Health Samples</strong> above the keyboard so it sits at the very end</span></div>
+      <div><b>6</b><span>Tap <strong>Done</strong>. That's it</span></div></div></div>
+    <div class="section-label">3 · Try it now</div>
+    <div class="card"><p class="lead" style="font-size:13.5px">Tap the automation once to test it. Safari opens Wellnest and shows your steps. The very first time, Safari asks for your name and PIN. After that it remembers.</p>
+      <p class="muted small mt8">Want your step history too? Use <a class="linkbtn" href="#/import">Import from iPhone Health</a> once.</p></div>
+    <p class="muted small center mt16">${icon('lock')} Only today's step number is sent, nothing else from Health.</p>` });
+  on(el, {
+    copy: async () => {
+      try { await navigator.clipboard.writeText(stepsLink()); toast('Link copied'); } catch { toast('Press and hold the link to copy it'); }
+    },
+  });
+});
+
+route('steps-in', async (el, raw) => {
+  const s = state.me, t = today();
+  const { parseSteps, saveSteps, stepRing, goalOf, fmtSteps, stepRows } = await import('../steps.js');
+  const n = parseSteps(raw);
+  const page = (inner) => frame({ heroH: 230, body: `<div class="on-hero"><div class="eyebrow">${esc(s.display_name)} · steps</div><div class="h1 mt4">Steps from Apple Watch</div></div>${inner}` });
+  if (n == null) {
+    el.innerHTML = page(`<div class="card mt16"><div class="h2">No step number came through</div><p class="lead mt8">Check step 5 of the setup: the <strong>Health Samples</strong> bubble needs to sit at the very end of the link.</p><a class="btn mt16" href="#/steps-auto">See the setup again</a></div>`);
+    return;
+  }
+  el.innerHTML = page(loadingHtml);
+  try {
+    const [existing] = await stepRows(s.id, t, t);
+    await saveSteps(s, t, n, 'iphone', existing);
+    if (!s.steps_on) await updateMember(s.id, { steps_on: true });
+    const goal = goalOf(s);
+    el.innerHTML = page(`<div class="card mt16 center"><div class="row" style="justify-content:center">${stepRing(n, goal, 150)}</div>
+      <div class="h2 mt16">${n >= goal ? 'Goal reached! 🎉' : `${fmtSteps(goal - n)} to go`}</div>
+      <p class="lead mt4">Saved for today. You can close this page.</p>
+      <a class="btn mt16" href="#/today">Open Today</a></div>`);
+  } catch (e) {
+    el.innerHTML = page(`<div class="card mt16"><div class="h2">That didn't save</div><p class="lead mt8">${esc(/step|relation|schema/i.test(e.message) ? 'Steps needs the database update first.' : e.message)}</p></div>`);
+  }
+});

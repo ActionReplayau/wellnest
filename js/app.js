@@ -25,6 +25,11 @@ export function frame({ hero = '', heroH = 0, body = '', tabs = null, heroAttr =
   return `${heroH ? `<div class="hero" ${heroAttr} style="--hero-h:${heroH}px"></div>` : ''}
     <div class="scr ${tabs ? '' : 'notabs'}">${hero}${body}</div>${tabbar}`;
 }
+function afterSignIn() {
+  let next = null;
+  try { next = sessionStorage.getItem('wn-next'); sessionStorage.removeItem('wn-next'); } catch {}
+  return next || 'today';
+}
 export function backBar(title, to = 'today', onHero = true) {
   return `<div class="topbar ${onHero ? 'on-hero' : ''}"><a class="backbtn" href="#/${to}" aria-label="Back">${icon('left')}</a>
     ${title ? `<div class="h2">${esc(title)}</div>` : ''}</div>`;
@@ -36,8 +41,12 @@ export async function render() {
   const [name, ...args] = (location.hash.replace(/^#\/?/, '') || 'today').split('/');
   const signedIn = !!state.me;
   const open = ['welcome', 'setup', 'who', 'pin', 'create'];
-  if (!signedIn && !open.includes(name)) return go(device()?.people?.length ? 'who' : 'welcome');
-  if (signedIn && open.includes(name)) return go('today');
+  if (!signedIn && !open.includes(name)) {
+    // remember a steps link so it still saves after signing in
+    if (name === 'steps-in') try { sessionStorage.setItem('wn-next', location.hash.slice(2)); } catch {}
+    return go(device()?.people?.length ? 'who' : 'welcome');
+  }
+  if (signedIn && open.includes(name)) return go(afterSignIn());
   const fn = routes[name] || routes.today;
   window.scrollTo(0, 0);
   app._acts = {};
@@ -96,7 +105,7 @@ route('setup', (el, inv) => {
       await signIn(loginEmail(familyEmail, f.get('name')), f.get('pin'));
       saveDevice({ ...(device() || {}), familyEmail });
       if (!(await loadFamily())) throw new Error('This login isn\'t part of a family yet.');
-      applyLook(); go('today');
+      applyLook(); go(afterSignIn());
     } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
   });
 });
@@ -193,7 +202,7 @@ route('pin', (el, id) => {
       const email = p.login_email || loginEmail(device().familyEmail, p.display_name);
       await signIn(email, pin);
       if (!(await loadFamily())) throw new Error('This login isn\'t part of a family.');
-      applyLook(); go('today');
+      applyLook(); go(afterSignIn());
     } catch (ex) {
       err.textContent = ex.message; pin = ''; paint();
       dots.classList.remove('shake'); void dots.offsetWidth; dots.classList.add('shake');

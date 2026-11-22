@@ -25,10 +25,10 @@ route('settings', (el) => {
     <div class="section-label">Me</div>
     <div class="card">
       <button class="list-row" data-act="pin"><div class="icon-tile t-violet">${icon('lock')}</div><div class="grow"><b>Change my PIN</b></div><span class="chev">${icon('right')}</span></button>
-      <a class="list-row" href="#/trackers"><div class="icon-tile t-pink">${icon('spark')}</div><div class="grow"><b>My trackers</b><span>Weight, period, endo, eyes</span></div><span class="chev">${icon('right')}</span></a>
+      <a class="list-row" href="#/trackers"><div class="icon-tile t-pink">${icon('spark')}</div><div class="grow"><b>My trackers</b><span>Weight, steps, period, endo, eyes</span></div><span class="chev">${icon('right')}</span></a>
       <a class="list-row" href="#/meds"><div class="icon-tile t-indigo">${icon('pill')}</div><div class="grow"><b>My medications</b><span>Add, change or stop</span></div><span class="chev">${icon('right')}</span></a>
       ${isAdultPrivate(me) ? `<a class="list-row" href="#/privacy"><div class="icon-tile t-green">${icon('shield')}</div><div class="grow"><b>Privacy</b><span>What your family can see</span></div><span class="chev">${icon('right')}</span></a>` : ''}
-      <a class="list-row" href="#/import"><div class="icon-tile t-teal">${icon('upload')}</div><div class="grow"><b>Import from iPhone Health</b><span>Periods, sleep and weight</span></div><span class="chev">${icon('right')}</span></a>
+      <a class="list-row" href="#/import"><div class="icon-tile t-teal">${icon('upload')}</div><div class="grow"><b>Import from iPhone Health</b><span>Periods, sleep, weight and steps</span></div><span class="chev">${icon('right')}</span></a>
       <button class="list-row" data-act="reminder"><div class="icon-tile t-amber">${icon('bell')}</div><div class="grow"><b>Daily reminder</b><span>${me.reminder_on && me.reminder_time ? `On · ${fmtClock(me.reminder_time)}` : 'Off'}</span></div><span class="chev">${icon('right')}</span></button>
     </div>
 
@@ -214,6 +214,7 @@ route('trackers', (el) => {
     <div class="card mt16"><div class="trk"><div class="icon-tile t-violet">${icon('check')}</div><div class="grow"><b>Symptoms, meds, sleep</b><span>Everyone has these</span></div><span class="chip">Always on</span></div>
       <div class="section-label" style="margin:14px 0 2px">Extras</div>
       ${t('weight_on', 't-teal', 'scale', 'Weight', 'Weekly, with height and age')}
+      ${t('steps_on', 't-green', 'steps', 'Steps', 'Daily step goal, from Apple Watch or typed in')}
       ${t('period_on', 't-pink', 'flower', 'Period tracker', 'Flow, predictions, cycle phases')}
       ${t('eyes_on', 't-indigo', 'eye', 'Glaucoma & eye drops', 'Drops per eye, pressure, warnings')}
       ${t('endo_on', 't-rose', 'pulse', 'Endo tracker', 'Pelvic pain, flares and patterns')}
@@ -225,7 +226,7 @@ route('trackers', (el) => {
     </div>
     ${me.eyes_on ? '<a class="btn ghost mt16" href="#/meds">Add your eye drops in My medications</a>' : ''}` });
   on(el, {
-    flip: async (b) => { const k = b.dataset.k; try { await updateMember(me.id, { [k]: !me[k] }); redo(); } catch (e) { toast(e.message); } },
+    flip: async (b) => { const k = b.dataset.k; try { await updateMember(me.id, { [k]: !me[k] }); redo(); } catch (e) { toast(k === 'steps_on' && /steps|column|schema/i.test(e.message) ? 'Steps needs the database update first (wellnest-update-4)' : e.message); } },
     body: async (b) => {
       const v = b.dataset.v;
       const fields = v === 'normal' ? { uterus_removed: false, ovaries_removed: false } : v === 'uterus' ? { uterus_removed: !me.uterus_removed } : { ovaries_removed: !me.ovaries_removed };
@@ -237,8 +238,8 @@ route('trackers', (el) => {
 // =====================================================================
 // Privacy (16+)
 // =====================================================================
-const AREAS = [['symptoms', 'Symptoms'], ['meds', 'Medications'], ['sleep', 'Sleep'], ['weight', 'Weight'], ['period', 'Period'], ['endo', 'Endo tracker'], ['eyes', 'Eye care']];
-const TABLES = { symptoms: ['symptoms', 'symptom_checks'], meds: ['medications', 'medication_doses'], sleep: ['sleep_logs'], weight: ['weight_logs'], period: ['period_days'], endo: ['endo_logs'], eyes: ['eye_pressure'] };
+const AREAS = [['symptoms', 'Symptoms'], ['meds', 'Medications'], ['sleep', 'Sleep'], ['weight', 'Weight'], ['steps', 'Steps'], ['period', 'Period'], ['endo', 'Endo tracker'], ['eyes', 'Eye care']];
+const TABLES = { symptoms: ['symptoms', 'symptom_checks'], meds: ['medications', 'medication_doses'], sleep: ['sleep_logs'], weight: ['weight_logs'], steps: ['step_logs'], period: ['period_days'], endo: ['endo_logs'], eyes: ['eye_pressure'] };
 route('privacy', (el) => {
   const me = state.me;
   el.innerHTML = frame({ heroH: 250, body: `${backBar('', 'settings')}
