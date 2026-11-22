@@ -1,6 +1,6 @@
 // Doctor report: a tidy summary for one person and a date range
 import { route, frame } from '../app.js';
-import { esc, icon, avatar, on, toast, today, addDays, fmtDay, daysBetween, avg, hoursText, round1, loadingHtml, ageOn } from '../util.js';
+import { esc, icon, avatar, on, toast, today, addDays, fmtDay, daysBetween, avg, hoursText, round1, avgClock, fmtClock, loadingHtml, ageOn } from '../util.js';
 import { state, member, subject, dueTimes, isAdultPrivate } from '../store.js';
 import { loadRange, dayList } from './history.js';
 import { cycleStats } from '../cycle.js';
@@ -57,7 +57,7 @@ export function buildReport(p, from, to, d) {
   if (d.sleep.length) {
     const hrs = d.sleep.map((x) => +x.hours);
     const poor = d.sleep.filter((x) => x.quality && x.quality <= 2).length;
-    out.push(`<h4>Sleep</h4><p>Average ${hoursText(avg(hrs))} a night over ${d.sleep.length} night${d.sleep.length > 1 ? 's' : ''} logged (shortest ${hoursText(Math.min(...hrs))}).${poor ? ` ${poor} poor night${poor > 1 ? 's' : ''}.` : ''}</p>`);
+    out.push(`<h4>Sleep</h4><p>Average ${hoursText(avg(hrs))} a night over ${d.sleep.length} night${d.sleep.length > 1 ? 's' : ''} logged (shortest ${hoursText(Math.min(...hrs))}).${(() => { const b = avgClock(d.sleep.map((x) => x.bed_time)), w = avgClock(d.sleep.map((x) => x.wake_time), 0); return b && w ? ` Usually asleep by ${fmtClock(b)} and up at ${fmtClock(w)}.` : ''; })()}${poor ? ` ${poor} poor night${poor > 1 ? 's' : ''}.` : ''}</p>`);
   }
 
   // weight

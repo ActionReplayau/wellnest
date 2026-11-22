@@ -3,7 +3,7 @@ import { route, frame, backBar, go } from '../app.js';
 import {
   esc, icon, toast, on, sheet, today, addDays, daysBetween, fmtDay, dayName, avg, round1, loadingHtml, fmtClock, fmtTime, sevColour,
 } from '../util.js';
-import { state, subject, isAdultPrivate, rows, upsert, insert, remove, update, upsertMany, updateMember, shareDefault, dueTimes } from '../store.js';
+import { state, subject, isAdultPrivate, rows, upsert, insert, remove, update, upsertMany, upsertSleepMany, updateMember, shareDefault, dueTimes } from '../store.js';
 import { cycleStats, phases, phaseOn, estimateFromPain } from '../cycle.js';
 import { hormoneSection } from '../hormones.js';
 import { periodCsv, saveFile, readPeriodCsv } from '../csv.js';
@@ -205,7 +205,7 @@ route('import', (el) => {
         ev.target.disabled = true; ev.target.textContent = 'Importing…';
         try {
           if (out.querySelector('#cP').checked) await upsertMany('period_days', found.period.map((r) => ({ ...r, member_id: s.id, source: 'iphone', shared: false })), 'member_id,day');
-          if (out.querySelector('#cS').checked) await upsertMany('sleep_logs', found.sleep.map((r) => ({ ...r, member_id: s.id, source: 'iphone', shared: shareDefault(s, 'sleep') })), 'member_id,night_of');
+          if (out.querySelector('#cS').checked) await upsertSleepMany(found.sleep.map((r) => ({ ...r, member_id: s.id, source: 'iphone', shared: shareDefault(s, 'sleep') })));
           if (out.querySelector('#cW').checked) await upsertMany('weight_logs', found.weight.map((r) => ({ ...r, member_id: s.id, source: 'iphone', shared: shareDefault(s, 'weight') })), 'member_id,day');
           if (out.querySelector('#cP').checked && !s.period_on) await updateMember(s.id, { period_on: true });
           toast('Imported'); go(out.querySelector('#cP').checked ? 'cycle' : 'history');
@@ -220,7 +220,7 @@ route('import', (el) => {
 // Reads export.zip -> export.xml as a stream, so very large exports work on a phone.
 export async function readHealthExport(file, progress = () => {}) {
   const FF = window.fflate;
-  const period = new Map(), sleepBySource = new Map(), weight = new Map();
+  const period = new Map(), sleepBySource = new Map(), sleepSpan = new Map(), weight = new Map();
   const dayOf = (s) => s.slice(0, 10);
   const attr = (tag, name) => { const m = tag.match(new RegExp(`\\b${name}="([^"]*)"`)); return m ? m[1] : null; };
   const handle = (tag) => {
@@ -240,6 +240,9 @@ export async function readHealthExport(file, progress = () => {}) {
       const hrs = (b - a) / 3600000; if (!(hrs > 0 && hrs < 24)) return;
       const night = dayOf(attr(tag, 'endDate')), src = attr(tag, 'sourceName') || '?';
       const key = `${night}|${src}`; sleepBySource.set(key, (sleepBySource.get(key) || 0) + hrs);
+      const st = attr(tag, 'startDate'), en = attr(tag, 'endDate'), span = sleepSpan.get(key);
+      if (!span) sleepSpan.set(key, { a, b, bed: st.slice(11, 16), wake: en.slice(11, 16) });
+      else { if (a < span.a) { span.a = a; span.bed = st.slice(11, 16); } if (b > span.b) { span.b = b; span.wake = en.slice(11, 16); } }
     } else if (type === 'HKQuantityTypeIdentifierBodyMass') {
       let v = parseFloat(attr(tag, 'value')); const unit = attr(tag, 'unit');
       if (unit === 'lb') v *= 0.45359237; else if (unit === 'g') v /= 1000;
@@ -280,10 +283,13 @@ export async function readHealthExport(file, progress = () => {}) {
     })();
   });
   const sleepByNight = new Map();
-  for (const [key, h] of sleepBySource) { const n = key.split('|')[0]; sleepByNight.set(n, Math.max(sleepByNight.get(n) || 0, h)); }
+  for (const [key, h] of sleepBySource) {
+    const n = key.split('|')[0], cur = sleepByNight.get(n), sp = sleepSpan.get(key);
+    if (!cur || h > cur.hours) sleepByNight.set(n, { hours: h, bed_time: sp?.bed || null, wake_time: sp?.wake || null });
+  }
   return {
     period: [...period].sort().map(([day, flow]) => ({ day, flow })),
-    sleep: [...sleepByNight].sort().map(([night_of, hours]) => ({ night_of, hours: Math.round(hours * 4) / 4 })),
+    sleep: [...sleepByNight].sort().map(([night_of, x]) => ({ night_of, hours: Math.round(x.hours * 4) / 4, bed_time: x.bed_time, wake_time: x.wake_time })),
     weight: [...weight].sort().map(([day, kg]) => ({ day, kg })),
   };
 }
