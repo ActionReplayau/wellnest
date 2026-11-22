@@ -1,6 +1,6 @@
 // History: one person's symptoms, sleep, medicines and weight over time
 import { route, frame } from '../app.js';
-import { esc, icon, avatar, on, today, addDays, fmtDay, avg, hoursText, loadingHtml, round1, sevClass, daysBetween } from '../util.js';
+import { esc, icon, avatar, on, today, addDays, fmtDay, avg, hoursText, loadingHtml, avgClock, fmtClock, round1, sevClass, daysBetween } from '../util.js';
 import { state, member, subject, rows, dueTimes, isAdultPrivate } from '../store.js';
 import { lineChart, barChart } from '../charts.js';
 
@@ -76,6 +76,7 @@ route('history', async (el, _a, alive) => {
     parts.push(`<div class="section-label">Sleep</div><div class="card"><div class="row between"><div class="h2">Sleep</div>
       <span class="muted small" style="font-weight:700">Average ${hoursText(avg([...vals.values()]))}</span></div>
       ${barChart(sleepDays, vals, { goal: 8 })}
+      ${(() => { const b = avgClock(d.sleep.map((x) => x.bed_time)), w = avgClock(d.sleep.map((x) => x.wake_time), 0); return b && w ? `<div class="muted small">Usually asleep by ${fmtClock(b)} · up at ${fmtClock(w)}</div>` : ''; })()}
       ${q.length ? `<div class="muted small">Sleep quality ${round1(avg(q))}/5 on average · ${q.filter((x) => x <= 2).length} poor night${q.filter((x) => x <= 2).length === 1 ? '' : 's'}</div>` : ''}</div>`);
   }
 

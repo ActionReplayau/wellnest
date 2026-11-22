@@ -108,4 +108,19 @@ export function ring(done, total, size = 84, label = '') {
 export const sum = (a) => a.reduce((x, y) => x + y, 0);
 export const avg = (a) => (a.length ? sum(a) / a.length : 0);
 export const round1 = (n) => Math.round(n * 10) / 10;
+// Hours between going to sleep and waking, e.g. "22:30" -> "06:45" = 8.25 (crosses midnight)
+export const sleepHours = (bed, wake) => {
+  if (!bed || !wake) return null;
+  const mins = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+  let d = mins(wake) - mins(bed);
+  if (d <= 0) d += 1440;
+  return Math.round((d / 60) * 100) / 100;
+};
+// Average clock time, treating evening + early morning as one night (so 11pm and 1am average to midnight)
+export const avgClock = (times, eveningStart = 12) => {
+  const list = times.filter(Boolean).map((t) => { const [h, m] = t.split(':').map(Number); let x = h * 60 + m; if (h < eveningStart && eveningStart !== 0) x += 1440; return x; });
+  if (!list.length) return null;
+  const a = Math.round(list.reduce((x, y) => x + y, 0) / list.length) % 1440;
+  return `${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
+};
 export const hoursText = (h) => { if (h == null) return '–'; const hh = Math.floor(h), mm = Math.round((h - hh) * 60); return `${hh}h ${pad(mm)}m`; };

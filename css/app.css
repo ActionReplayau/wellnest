@@ -218,3 +218,10 @@ input[type=date].input::-webkit-date-and-time-value{text-align:left}
 .moves{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .move{background:var(--chip);border-radius:16px;padding:10px 12px;display:flex;align-items:center;gap:10px}
 .move .em{font-size:24px;line-height:1}.move b{font-size:12.5px;line-height:1.25}
+/* sleep: bedtime + wake time side by side */
+.sleeptimes{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.sleeptimes .field{margin-top:0;min-width:0}
+.sleeptimes .field>span{display:flex;align-items:center;gap:5px}
+.sleeptimes .field>span .i{width:15px;height:15px}
+.sleeptimes .input{font-weight:800;font-size:17px;padding-right:10px}
+.theme-glow .sleeptimes .input{color-scheme:dark}

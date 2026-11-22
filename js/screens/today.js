@@ -2,10 +2,10 @@
 import { route, frame, go } from '../app.js';
 import {
   esc, icon, avatar, toast, on, sheet, confirmBox, today, addDays, daysBetween, fmtLong, fmtDay, greeting, sevClass, SEV_WORDS, sevColour,
-  ring, loadingHtml, fmtClock, hoursText, round1,
+  ring, loadingHtml, fmtClock, hoursText, round1, sleepHours,
 } from '../util.js';
 import {
-  state, member, subject, loggable, amParent, isAdultPrivate, rows, insert, upsert, update, remove, shareDefault, dueTimes, updateMember,
+  state, member, subject, loggable, amParent, isAdultPrivate, rows, insert, upsert, upsertSleep, update, remove, shareDefault, dueTimes, updateMember,
 } from '../store.js';
 import { regionAt, suggestParts } from '../body.js';
 
@@ -34,9 +34,12 @@ async function load(sid, t) {
     rows('period_days', (q) => q.eq('member_id', sid).eq('day', t)),
     rows('endo_logs', (q) => q.eq('member_id', sid).eq('day', t)),
   ]);
+  // Last bedtime and wake time used, so the boxes start close to the usual times
+  const lastTimes = await rows('sleep_logs', (q) => q.eq('member_id', sid).lt('night_of', t).not('bed_time', 'is', null)
+    .order('night_of', { ascending: false }).limit(1)).then((r) => r[0] || null).catch(() => null);
   const ids = symptoms.map((s) => s.id);
   const checks = ids.length ? await rows('symptom_checks', (q) => q.in('symptom_id', ids).order('day')) : [];
-  return { symptoms, checks, meds, doses, sleep: sleep[0] || null, weights, period: period[0] || null, endo: endo[0] || null };
+  return { symptoms, checks, meds, doses, sleep: sleep[0] || null, lastTimes, weights, period: period[0] || null, endo: endo[0] || null };
 }
 
 // latest severity before (or on) a day
@@ -222,17 +225,26 @@ function medsCard(s, d, t) {
 // ---------- sleep ----------
 const FACES = ['😫', '😕', '😐', '🙂', '😄'];
 const FACE_WORDS = ['Awful', 'Poor', 'OK', 'Good', 'Great'];
+const hrsHtml = (h) => (h == null ? '–' : hoursText(h).replace(/h /, '<small>h</small> ').replace(/m$/, '<small>m</small>'));
+const hhmm = (t) => (t ? t.slice(0, 5) : '');
 function sleepCard(s, d, adult) {
-  const h = d.sleep?.hours ?? 7.5;
+  const sl = d.sleep;
+  const bed = hhmm(sl?.bed_time) || (sl ? '' : hhmm(d.lastTimes?.bed_time) || '22:30');
+  const wake = hhmm(sl?.wake_time) || (sl ? '' : hhmm(d.lastTimes?.wake_time) || '07:00');
+  const h = sleepHours(bed, wake) ?? sl?.hours ?? null;
+  const status = sl ? (sl.bed_time ? `Saved · ${fmtClock(sl.bed_time)} to ${fmtClock(sl.wake_time)}` : 'Saved · add your times to update it') : 'When did you go to sleep and wake up?';
   return `<div class="section-label">Sleep</div><div class="card">
     <div class="row between"><div class="row"><div class="icon-tile t-indigo">${icon('moon')}</div><div><div class="h2">Last night</div>
-      <div class="muted small">${d.sleep ? 'Saved' : 'Slide to how long you slept'}</div></div></div>
-      ${adult && d.sleep ? shareChip('sleep_logs', d.sleep.id, d.sleep.shared) : ''}</div>
-    <div class="row mt12" style="align-items:baseline"><div class="bigval" id="hrs">${hoursText(h).replace(/h /, '<small>h</small> ').replace(/m$/, '<small>m</small>')}</div></div>
-    <input type="range" min="0" max="14" step="0.25" value="${h}" id="sleepRange" aria-label="Hours slept">
-    <div class="row between muted small"><span>0h</span><span>7h</span><span>14h</span></div>
+      <div class="muted small" id="sleepStatus">${status}</div></div></div>
+      ${adult && sl ? shareChip('sleep_logs', sl.id, sl.shared) : ''}</div>
+    <div class="sleeptimes mt12">
+      <label class="field"><span>${icon('moon')} Went to sleep</span><input class="input" type="time" id="bedT" value="${bed}"></label>
+      <label class="field"><span>${icon('sun')} Woke up</span><input class="input" type="time" id="wakeT" value="${wake}"></label>
+    </div>
+    <div class="row between mt12" style="align-items:center"><div><div class="muted small bold">Hours slept</div><div class="bigval" id="hrs">${hrsHtml(h)}</div></div>
+      <button class="btn small" data-act="sleep" id="sleepSave">${sl ? 'Update' : 'Save'}</button></div>
     <div class="mt12 bold" style="font-size:14px">How well?</div>
-    <div class="faces">${FACES.map((f, i) => `<button data-act="quality" data-q="${i + 1}" class="${d.sleep?.quality === i + 1 ? 'on' : ''}" aria-label="${FACE_WORDS[i]}">${f}</button>`).join('')}</div>
+    <div class="faces">${FACES.map((f, i) => `<button data-act="quality" data-q="${i + 1}" class="${sl?.quality === i + 1 ? 'on' : ''}" aria-label="${FACE_WORDS[i]}">${f}</button>`).join('')}</div>
   </div>`;
 }
 
@@ -268,20 +280,25 @@ function wire(el, s, t, d) {
   const redraw = async () => { const nd = await load(s.id, t); draw(el, s, t, nd); };
   if (view === 'body') requestAnimationFrame(() => drawLines(el));
 
-  const range = el.querySelector('#sleepRange');
-  let sleepTimer;
+  const bedT = el.querySelector('#bedT'), wakeT = el.querySelector('#wakeT');
+  const sleepTimes = () => {
+    const bed = bedT?.value || '', wake = wakeT?.value || '';
+    const hours = sleepHours(bed, wake);
+    return hours == null ? null : { bed_time: bed, wake_time: wake, hours };
+  };
   const saveSleep = async (fields) => {
     try {
-      const row = await upsert('sleep_logs', {
-        member_id: s.id, night_of: t, hours: d.sleep?.hours ?? 7.5, quality: d.sleep?.quality ?? null,
+      const row = await upsertSleep({
+        member_id: s.id, night_of: t, hours: d.sleep?.hours ?? null, quality: d.sleep?.quality ?? null,
         shared: d.sleep?.shared ?? shareDefault(s, 'sleep'), ...fields,
-      }, 'member_id,night_of');
-      const first = !d.sleep; d.sleep = row;
-      if (first) draw(el, s, t, d);
-    } catch (e) { toast(e.message); }
+      });
+      d.sleep = row; draw(el, s, t, d);
+      return true;
+    } catch (e) { toast(e.message); return false; }
   };
-  range?.addEventListener('input', () => { el.querySelector('#hrs').innerHTML = hoursText(+range.value).replace(/h /, '<small>h</small> ').replace(/m$/, '<small>m</small>'); });
-  range?.addEventListener('change', () => { clearTimeout(sleepTimer); sleepTimer = setTimeout(() => saveSleep({ hours: +range.value }), 150); });
+  const showHours = () => { const x = sleepTimes(); el.querySelector('#hrs').innerHTML = hrsHtml(x ? x.hours : d.sleep?.hours ?? null); };
+  bedT?.addEventListener('input', showHours); wakeT?.addEventListener('input', showHours);
+  bedT?.addEventListener('change', showHours); wakeT?.addEventListener('change', showHours);
 
   on(el, {
     subject: (b) => { state.subjectId = b.dataset.id; view = null; go('today'); },
@@ -356,9 +373,17 @@ function wire(el, s, t, d) {
       const m = d.meds.find((x) => x.id === b.dataset.id);
       try { await insert('medication_doses', { medication_id: m.id, member_id: s.id, day: t, scheduled_time: null, shared: m.shared }); toast(`${m.name} noted`); redraw(); } catch (e) { toast(e.message); }
     },
-    quality: (b) => saveSleep({ quality: +b.dataset.q, hours: +range.value }).then(() => {
-      el.querySelectorAll('.faces button').forEach((x) => x.classList.toggle('on', x === b));
-    }),
+    sleep: async () => {
+      const x = sleepTimes();
+      if (!x) return toast('Pick the time you went to sleep and the time you woke up');
+      if (x.hours > 20) return toast('That\'s over 20 hours. Check the times.');
+      if (await saveSleep(x)) toast(`Sleep saved · ${hoursText(x.hours)}`);
+    },
+    quality: (b) => {
+      const x = sleepTimes();
+      if (!x && !d.sleep) return toast('Pick your sleep times first');
+      return saveSleep({ quality: +b.dataset.q, ...(x || {}) });
+    },
     weight: async () => {
       const kg = parseFloat(el.querySelector('#kg').value);
       if (!(kg > 0 && kg < 400)) return toast('Type your weight in kg');

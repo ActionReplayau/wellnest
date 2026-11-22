@@ -164,6 +164,21 @@ export async function upsert(table, row, onConflict) {
   if (error) throw new Error(friendly(error));
   return data;
 }
+// Until the bed/wake time database update is run, save sleep without the times rather than failing
+const noSleepTimes = (m) => /bed_time|wake_time/.test(m || '');
+const stripTimes = ({ bed_time, wake_time, ...rest }) => rest;
+export async function upsertSleep(row) {
+  try { return await upsert('sleep_logs', row, 'member_id,night_of'); } catch (e) {
+    if (!noSleepTimes(e.message)) throw e;
+    return upsert('sleep_logs', stripTimes(row), 'member_id,night_of');
+  }
+}
+export async function upsertSleepMany(list) {
+  try { return await upsertMany('sleep_logs', list, 'member_id,night_of'); } catch (e) {
+    if (!noSleepTimes(e.message)) throw e;
+    return upsertMany('sleep_logs', list.map(stripTimes), 'member_id,night_of');
+  }
+}
 export async function upsertMany(table, list, onConflict) {
   for (let i = 0; i < list.length; i += 500) {
     const { error } = await sb.from(table).upsert(list.slice(i, i + 500), { onConflict, ignoreDuplicates: true });
